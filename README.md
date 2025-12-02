@@ -174,40 +174,37 @@ $response = new JsonResponse(data: ['status' => 'ok'], status: 200);
 
 ---
 
-## 🚀 Deployment on Apache
+## ☁️ Deployment on Clever Cloud
 
-To deploy this application on a standard Apache server (e.g., shared hosting):
+To deploy this application on [Clever Cloud](https://www.clever-cloud.com/):
 
-1.  **Install Apache Pack:**
-    Ensure you have run `composer require symfony/apache-pack`. This generates a `.htaccess` file in the `public/` directory.
+1.  **Prerequisites:**
+    *   A Clever Cloud account.
+    *   [Clever Tools CLI](https://www.clever-cloud.com/doc/clever-tools/getting-started/) installed (optional, but recommended).
 
-2.  **Document Root:**
-    Point your Apache VirtualHost `DocumentRoot` to the `public/` directory of the project.
-    ```apache
-    <VirtualHost *:80>
-        ServerName clash-of-pop-culture.local
-        DocumentRoot /path/to/project/public
-        <Directory /path/to/project/public>
-            AllowOverride All
-            Require all granted
-        </Directory>
-    </VirtualHost>
-    ```
+2.  **Create Application:**
+    *   Create a **PHP** application.
+    *   Select **Apache** as the web server (default).
 
-3.  **Permissions:**
-    Ensure the web server user (e.g., `www-data`) has write access to the `var/` directory.
+3.  **Environment Variables:**
+    Set the following variables in the Clever Cloud dashboard or via CLI:
+    *   `APP_ENV`: `prod`
+    *   `APP_SECRET`: (Generate a random string)
+    *   `DATABASE_URL`: (Your database connection string, e.g., PostgreSQL addon)
+    *   `CC_WEBROOT`: `/public` (Points to the public directory)
+
+4.  **Deploy:**
+    Push your code to the Clever Cloud remote:
     ```bash
-    chmod -R 777 var/
+    git push clever main
     ```
 
-4.  **Database:**
-    If using SQLite, ensure the database file (`var/data.db`) and the directory (`var/`) are writable by the web server.
-    If using PostgreSQL/MySQL in production, update the `DATABASE_URL` in your `.env.local` file.
-
-5.  **Environment:**
-    Create a `.env.local` file for production settings:
+5.  **Database Migration:**
+    Add a "Post build hook" to run migrations automatically:
     ```bash
-    APP_ENV=prod
-    APP_DEBUG=0
+    ./bin/console doctrine:migrations:migrate --no-interaction
     ```
+
+
+
 

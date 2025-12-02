@@ -7,6 +7,9 @@
         "php": ">=8.4",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "doctrine/doctrine-bundle": "^3.1",
+        "doctrine/doctrine-migrations-bundle": "^3.7",
+        "doctrine/orm": "^3.5",
         "phpdocumentor/reflection-docblock": "^5.6",
         "phpstan/phpdoc-parser": "^2.3",
         "symfony/apache-pack": "*",
@@ -74,9 +77,6 @@
         }
     },
     "require-dev": {
-        "doctrine/doctrine-bundle": "^3.1",
-        "doctrine/doctrine-migrations-bundle": "^3.7",
-        "doctrine/orm": "^3.5",
         "symfony/maker-bundle": "^1.65"
     }
 }
