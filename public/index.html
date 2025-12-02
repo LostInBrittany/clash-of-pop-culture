@@ -117,26 +117,57 @@
         }
 
         async function vote(choice) {
+            if (currentUserVote) return; // Prevent multiple votes
+
             try {
                 // Optimistic update
                 currentUserVote = choice;
+
+                // Immediate UI feedback: Disable buttons
+                updateButtonState(true);
+                applySelectionStyle(choice);
 
                 await fetch('/api/vote', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ choice })
                 });
-                // Visual feedback could be added here
+
             } catch (e) {
                 console.error("Vote failed", e);
+                // In a real app, we might revert currentUserVote here if the network fails
+            }
+        }
+
+        function applySelectionStyle(choice) {
+            // Reset borders
+            document.getElementById('btn-a').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+            document.getElementById('btn-b').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+
+            if (choice === 'A') {
+                document.getElementById('btn-a').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+            } else if (choice === 'B') {
+                document.getElementById('btn-b').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+            }
+        }
+
+        function updateButtonState(isDisabled) {
+            document.getElementById('btn-a').disabled = isDisabled;
+            document.getElementById('btn-b').disabled = isDisabled;
+
+            if (isDisabled) {
+                document.getElementById('btn-a').classList.add('cursor-not-allowed');
+                document.getElementById('btn-b').classList.add('cursor-not-allowed');
+            } else {
+                document.getElementById('btn-a').classList.remove('cursor-not-allowed');
+                document.getElementById('btn-b').classList.remove('cursor-not-allowed');
             }
         }
 
         function render(state) {
             // Detect new battle to reset vote
-            const battleId = state.battle.A + state.battle.B;
-            if (currentBattleId !== battleId) {
-                currentBattleId = battleId;
+            if (currentBattleId !== state.id) {
+                currentBattleId = state.id;
                 currentUserVote = null;
             }
 
@@ -157,19 +188,21 @@
             timeLeftEl.innerText = displayTime + 's';
 
             // Simple timer visualization (10s vote cycle)
-            // timeLeft is total cycle time remaining.
-            // Vote phase is when timeLeft > 5 (15 down to 5).
-            // We want 100% at 15s, 0% at 5s.
             let percentage = 0;
             if (state.phase === 'VOTE') {
                 percentage = ((state.timeLeft - 5) / 10) * 100;
             }
             timerBar.style.width = `${percentage}%`;
 
-            // Disable buttons during result phase
+            // Determine if buttons should be disabled
+            // Disabled if: Result phase OR Already voted
             const isResult = state.phase !== 'VOTE';
-            document.getElementById('btn-a').disabled = isResult;
-            document.getElementById('btn-b').disabled = isResult;
+            const isDisabled = isResult || currentUserVote !== null;
+
+            updateButtonState(isDisabled);
+
+            // Apply selection style
+            applySelectionStyle(currentUserVote);
 
             // Handle Results Visualization
             const progressA = document.getElementById('progress-a');
@@ -177,21 +210,7 @@
             const percentA = document.getElementById('percent-a');
             const percentB = document.getElementById('percent-b');
 
-            // Reset borders first
-            document.getElementById('btn-a').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-            document.getElementById('btn-b').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-
-            // Apply selection style if voting
-            if (currentUserVote === 'A') {
-                document.getElementById('btn-a').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-            } else if (currentUserVote === 'B') {
-                document.getElementById('btn-b').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-            }
-
             if (isResult) {
-                document.getElementById('btn-a').classList.add('cursor-not-allowed');
-                document.getElementById('btn-b').classList.add('cursor-not-allowed');
-
                 // Show percentages
                 progressA.style.transform = `scaleX(${state.results.A / 100})`;
                 progressB.style.transform = `scaleX(${state.results.B / 100})`;
@@ -202,9 +221,6 @@
                 percentA.classList.remove('opacity-0');
                 percentB.classList.remove('opacity-0');
             } else {
-                document.getElementById('btn-a').classList.remove('cursor-not-allowed');
-                document.getElementById('btn-b').classList.remove('cursor-not-allowed');
-
                 // Reset
                 progressA.style.transform = 'scaleX(0)';
                 progressB.style.transform = 'scaleX(0)';

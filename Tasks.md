@@ -61,25 +61,17 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Enum\VoteChoice;
+use App\Repository\BattleRepository;
+use Psr\Cache\CacheItemPoolInterface;
 
 class GameEngine
 {
     private const CYCLE_DURATION = 15;
     private const VOTE_DURATION = 10;
 
-    private array $battles = [
-        ['Beyblade', 'Bakugan'],
-        ['Marcelino', 'Les Malheurs de Sophie'],
-        ['Albator', 'Ulysse 31'],
-        ['Dragon Ball', 'Les Chevaliers du Zodiaque'],
-        ['Les Mystérieuses Cités d’Or', 'Il Était Une Fois… la Vie'],
-        ['Nicky Larson', 'Cobra'],
-        ['Action Man', 'G.I. Joe'],
-        ['Totally Spies', 'Winx Club'],
-    ];
-
     public function __construct(
         private readonly CacheItemPoolInterface $cache,
+        private readonly BattleRepository $battleRepository,
         private readonly int $now = 0, // Allows time injection for testing
     ) {}
 
@@ -106,8 +98,9 @@ class GameEngine
         $cycleTime = $timestamp % self::CYCLE_DURATION;
         
         // Deterministic battle selection based on 15s window
-        $battleIndex = $this->getCurrentBattleIndex();
-        [$optionA, $optionB] = $this->battles[$battleIndex];
+        $battle = $this->getCurrentBattle();
+        $optionA = $battle ? $battle->getOptionA() : 'Loading...';
+        $optionB = $battle ? $battle->getOptionB() : 'Loading...';
 
         $phase = match(true) {
             $cycleTime < self::VOTE_DURATION => 'VOTE',
@@ -131,6 +124,7 @@ class GameEngine
         }
 
         return [
+            'id' => $battleId,
             'phase' => $phase,
             'timeLeft' => self::CYCLE_DURATION - $cycleTime,
             'battle' => [
@@ -148,10 +142,31 @@ class GameEngine
         ];
     }
 
-    private function getCurrentBattleIndex(): int
+    private function getCurrentBattle(): ?\App\Entity\Battle
     {
         $timestamp = $this->now ?: time();
-        return (int) floor($timestamp / self::CYCLE_DURATION) % count($this->battles);
+        $count = $this->battleRepository->count([]);
+        
+        if ($count === 0) {
+            return null;
+        }
+
+        // Deterministic Random Selection
+        // 1. Get the current 15s window index (e.g., 123456)
+        $windowIndex = (int) floor($timestamp / self::CYCLE_DURATION);
+        
+        // 2. Hash it to get a pseudo-random hex string (e.g., "a1b2...")
+        $hash = md5((string) $windowIndex);
+        
+        // 3. Convert first 8 chars of hash to integer
+        $seed = hexdec(substr($hash, 0, 8));
+        
+        // 4. Map to a valid battle index
+        $battleIndex = $seed % $count;
+        
+        // Offset is 0-based, so we can use findBy with limit 1 and offset
+        $results = $this->battleRepository->findBy([], ['id' => 'ASC'], 1, $battleIndex);
+        return $results[0] ?? null;
     }
 
     private function getCurrentBattleId(): string
@@ -316,26 +331,57 @@ class GameController extends AbstractController
         }
 
         async function vote(choice) {
+            if (currentUserVote) return; // Prevent multiple votes
+
             try {
                 // Optimistic update
                 currentUserVote = choice;
+                
+                // Immediate UI feedback: Disable buttons
+                updateButtonState(true);
+                applySelectionStyle(choice);
                 
                 await fetch('/api/vote', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ choice })
                 });
-                // Visual feedback could be added here
+
             } catch (e) {
                 console.error("Vote failed", e);
+                // In a real app, we might revert currentUserVote here if the network fails
+            }
+        }
+
+        function applySelectionStyle(choice) {
+            // Reset borders
+            document.getElementById('btn-a').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+            document.getElementById('btn-b').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+
+            if (choice === 'A') {
+                document.getElementById('btn-a').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+            } else if (choice === 'B') {
+                document.getElementById('btn-b').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
+            }
+        }
+
+        function updateButtonState(isDisabled) {
+            document.getElementById('btn-a').disabled = isDisabled;
+            document.getElementById('btn-b').disabled = isDisabled;
+            
+            if (isDisabled) {
+                document.getElementById('btn-a').classList.add('cursor-not-allowed');
+                document.getElementById('btn-b').classList.add('cursor-not-allowed');
+            } else {
+                document.getElementById('btn-a').classList.remove('cursor-not-allowed');
+                document.getElementById('btn-b').classList.remove('cursor-not-allowed');
             }
         }
 
         function render(state) {
             // Detect new battle to reset vote
-            const battleId = state.battle.A + state.battle.B;
-            if (currentBattleId !== battleId) {
-                currentBattleId = battleId;
+            if (currentBattleId !== state.id) {
+                currentBattleId = state.id;
                 currentUserVote = null;
             }
 
@@ -356,19 +402,21 @@ class GameController extends AbstractController
             timeLeftEl.innerText = displayTime + 's';
             
             // Simple timer visualization (10s vote cycle)
-            // timeLeft is total cycle time remaining.
-            // Vote phase is when timeLeft > 5 (15 down to 5).
-            // We want 100% at 15s, 0% at 5s.
             let percentage = 0;
             if (state.phase === 'VOTE') {
                  percentage = ((state.timeLeft - 5) / 10) * 100;
             }
             timerBar.style.width = `${percentage}%`;
 
-            // Disable buttons during result phase
+            // Determine if buttons should be disabled
+            // Disabled if: Result phase OR Already voted
             const isResult = state.phase !== 'VOTE';
-            document.getElementById('btn-a').disabled = isResult;
-            document.getElementById('btn-b').disabled = isResult;
+            const isDisabled = isResult || currentUserVote !== null;
+
+            updateButtonState(isDisabled);
+
+            // Apply selection style
+            applySelectionStyle(currentUserVote);
             
             // Handle Results Visualization
             const progressA = document.getElementById('progress-a');
@@ -376,21 +424,7 @@ class GameController extends AbstractController
             const percentA = document.getElementById('percent-a');
             const percentB = document.getElementById('percent-b');
 
-            // Reset borders first
-            document.getElementById('btn-a').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-            document.getElementById('btn-b').classList.remove('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-
-            // Apply selection style if voting
-            if (currentUserVote === 'A') {
-                document.getElementById('btn-a').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-            } else if (currentUserVote === 'B') {
-                document.getElementById('btn-b').classList.add('border-yellow-400', 'shadow-[0_0_30px_rgba(250,204,21,0.5)]');
-            }
-
             if (isResult) {
-                document.getElementById('btn-a').classList.add('cursor-not-allowed');
-                document.getElementById('btn-b').classList.add('cursor-not-allowed');
-                
                 // Show percentages
                 progressA.style.transform = `scaleX(${state.results.A / 100})`;
                 progressB.style.transform = `scaleX(${state.results.B / 100})`;
@@ -401,9 +435,6 @@ class GameController extends AbstractController
                 percentA.classList.remove('opacity-0');
                 percentB.classList.remove('opacity-0');
             } else {
-                document.getElementById('btn-a').classList.remove('cursor-not-allowed');
-                document.getElementById('btn-b').classList.remove('cursor-not-allowed');
-                
                 // Reset
                 progressA.style.transform = 'scaleX(0)';
                 progressB.style.transform = 'scaleX(0)';
@@ -429,3 +460,52 @@ symfony server:start
 ```
 
 Open `http://127.0.0.1:8000`.
+
+## 5. Phase 2: Database & Enhancements
+
+The following improvements transform the static demo into a dynamic, database-driven application.
+
+### 5.1 Database Setup (SQLite)
+
+1.  **Install Doctrine ORM:**
+    ```bash
+    composer require symfony/orm-pack symfony/maker-bundle --dev
+    ```
+
+2.  **Configure `.env`:**
+    Update `DATABASE_URL` to use SQLite:
+    ```bash
+    DATABASE_URL="sqlite:///%kernel.project_dir%/var/data.db"
+    ```
+
+3.  **Create `Battle` Entity:**
+    Run `php bin/console make:entity Battle` and add `optionA` (string) and `optionB` (string).
+
+4.  **Create Data Loader:**
+    Create `src/Command/LoadBattlesCommand.php` to populate the database with initial battles.
+
+5.  **Initialize Database:**
+    ```bash
+    php bin/console make:migration
+    php bin/console doctrine:migrations:migrate
+    php bin/console app:load-battles
+    ```
+
+### 5.2 Random Battle Selection
+
+The `GameEngine` has been updated to select battles randomly from the database while maintaining consistency across all users.
+
+-   **Logic:** It uses the current 15-second time window as a seed to generate a deterministic random index.
+-   **Benefit:** Every user sees the same battle at the same time, but the battle changes randomly every cycle.
+
+### 5.3 Vote Locking & Fresh Scores
+
+-   **Fresh Scores:** The API now returns a unique `id` for each battle cycle. The frontend uses this to detect when a new battle begins and resets the score/vote state.
+-   **Vote Locking:** Once a user votes, the buttons are disabled for the remainder of the cycle to prevent multiple votes from the same session.
+
+### 5.4 New Commands
+
+-   `app:load-battles`: Loads the initial dataset into the database.
+-   `app:list-battles`: Lists all battles currently in the database.
+-   `app:get-random-battle`: Fetches and displays a random battle (useful for testing randomness).
+
