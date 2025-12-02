@@ -4,6 +4,12 @@ Welcome to **Clash of Pop Culture**, a demo application designed to showcase the
 
 If you are coming from a **Java** or **JavaScript** background, this project is specifically crafted to help you map your existing knowledge to the modern PHP ecosystem.
 
+![Screenshot](./assets/screenshot.jpg)
+
+## Play it!
+
+![QRCode](./assets/qrcode.jpg)
+
 ---
 
 ## 🚀 For Java Developers
@@ -199,11 +205,16 @@ To deploy this application on [Clever Cloud](https://www.clever-cloud.com/):
     git push clever main
     ```
 
-5.  **Database Migration:**
-    Add a "Post build hook" to run migrations automatically:
-    ```bash
-    ./bin/console doctrine:migrations:migrate --no-interaction
-    ```
+5.  **Database Migration & Bootstrap:**
+    Set the `CC_POST_BUILD_HOOK` environment variable to run migrations and load initial data automatically:
+    *   **Variable:** `CC_POST_BUILD_HOOK`
+    *   **Value:** `./bin/console doctrine:migrations:migrate --no-interaction; ./bin/console app:load-battles`
+    *Note: `app:load-battles` is safe to run multiple times.*
+
+6.  **Database Configuration (MySQL Addon):**
+    If you are using a Clever Cloud MySQL addon, it exposes a `MYSQL_URI` environment variable. You must map this to `DATABASE_URL`.
+    In the **Environment variables** section of your application:
+    *   Add `DATABASE_URL` with the value `MYSQL_URI` (select "Value is a variable").
 
 
 

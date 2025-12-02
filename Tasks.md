@@ -509,3 +509,42 @@ The `GameEngine` has been updated to select battles randomly from the database w
 -   `app:list-battles`: Lists all battles currently in the database.
 -   `app:get-random-battle`: Fetches and displays a random battle (useful for testing randomness).
 
+### 5.5 Homepage Routing Fix (Apache)
+
+If deploying on Apache (e.g., Clever Cloud), you must update `public/.htaccess` to prioritize `index.html` over `index.php` for the root path.
+
+Change:
+```apache
+DirectoryIndex index.php
+```
+To:
+```apache
+DirectoryIndex index.html index.php
+```
+
+## 6. Deployment & Remote Database
+
+### 6.1 Clever Cloud Configuration
+-   **Webroot:** Set environment variable `CC_WEBROOT` to `/public`.
+-   **Database:** Map the `MYSQL_URI` variable (from MySQL addon) to `DATABASE_URL`.
+
+### 6.2 Migration Compatibility
+If developing on SQLite and deploying to MySQL, ensure your migration file handles the syntax differences (specifically `AUTOINCREMENT` vs `AUTO_INCREMENT`).
+
+Modify your migration's `up()` method:
+```php
+$platform = $this->connection->getDatabasePlatform();
+
+if ($platform instanceof \Doctrine\DBAL\Platforms\SqlitePlatform) {
+    $this->addSql('CREATE TABLE battle (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, ...');
+} else {
+    $this->addSql('CREATE TABLE battle (id INT AUTO_INCREMENT NOT NULL, ...');
+}
+```
+
+### 6.3 Remote Bootstrap
+To initialize the remote database automatically on every deploy, set the `CC_POST_BUILD_HOOK` environment variable:
+
+*   **Variable:** `CC_POST_BUILD_HOOK`
+*   **Value:** `./bin/console doctrine:migrations:migrate --no-interaction; ./bin/console app:load-battles`
+
